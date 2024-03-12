@@ -48,7 +48,6 @@ class CustomGraphGymDataModule(LightningDataModule):
         # label = create_link_label(id, id_neg)
         # set_dataset_attr(dataset, 'train_edge_index', id_all,
         #                     id_all.shape[1])
-        print(self.splits)
         
     def _create_data_loaders(self):
         pw = cfg.num_workers > 0
@@ -125,3 +124,8 @@ def train(
 
     trainer.fit(model, datamodule=datamodule)
     trainer.test(model, datamodule=datamodule)
+
+    # for future try from pytorch_lightning.accelerators import find_usable_cuda_devices
+    # # Find two GPUs on the system that are not already occupied
+    # trainer = Trainer(accelerator="cuda", devices=find_usable_cuda_devices(cfg.devices))
+    #  pl 2.1.0 https://lightning.ai/docs/pytorch/2.1.0/accelerators/gpu_basic.html
