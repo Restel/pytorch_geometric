@@ -537,13 +537,13 @@ def set_out_dir(out_dir, fname):
         makedirs_rm_exist(cfg.out_dir)
 
 
-def set_run_dir(out_dir):
+def set_run_dir(out_dir, i):
     r"""Create the directory for each random seed experiment run.
 
     Args:
         out_dir (str): Directory for output, specified in :obj:`cfg.out_dir`
     """
-    cfg.run_dir = osp.join(out_dir, str(cfg.seed))
+    cfg.run_dir = osp.join(out_dir, str(i))
     # Make output directory
     if cfg.train.auto_resume:
         os.makedirs(cfg.run_dir, exist_ok=True)
