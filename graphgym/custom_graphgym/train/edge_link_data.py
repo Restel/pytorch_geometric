@@ -36,8 +36,9 @@ class CustomGraphGymDataModule(LightningDataModule):
 #         f = T.RandomLinkSplit(num_val=0.1, num_test=0.1, is_undirected=True,
 #                       add_negative_train_samples=False, neg_sampling_ratio=0)
 # train_data, val_data, test_data = f(data_pure)
+        add_negative_train_samples = not cfg.dataset.resample_negative
         f = RandomLinkSplit(num_val=0.1, num_test=0.1, is_undirected=True,
-                       add_negative_train_samples=True, neg_sampling_ratio=1) # TODO add negative samples during the training???
+                       add_negative_train_samples=False, neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio) # TODO add negative samples during the training???
         splits = f(self.dataset) # TODO add cfg option and register it?
         # for split_data, split_name in zip(splits, ['train', 'val', 'test']):
         #     self.splits[split_name] = set_split_attributes(split_data, split_name)
@@ -49,6 +50,9 @@ class CustomGraphGymDataModule(LightningDataModule):
         # set_dataset_attr(dataset, 'train_edge_index', id_all,
         #                     id_all.shape[1])
         
+        
+        # neg_sampling = True,
+        # neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio,
     def _create_data_loaders(self):
         pw = cfg.num_workers > 0
         self._train_dataloader = LinkNeighborLoader(

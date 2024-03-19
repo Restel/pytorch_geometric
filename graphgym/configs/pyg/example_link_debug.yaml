@@ -1,5 +1,6 @@
 out_dir: results/link_predict_debug
 tensorboard_each_run: True
+seed: 2024
 dataset:
   format: PyG
   name: Cora
@@ -9,6 +10,7 @@ dataset:
   node_encoder_name: Atom
   edge_encoder: False
   edge_encoder_name: Bond
+  resample_negative: True
 train:
   batch_size: 32
   eval_period: 1
@@ -20,7 +22,7 @@ model:
   edge_decoding: dot
   graph_pooling: add
 gnn:
-  layers_pre_mp: 1
+  layers_pre_mp: 0
   layers_mp: 2
   layers_post_mp: 1
   dim_inner: 64
@@ -29,10 +31,11 @@ gnn:
   batchnorm: False # False
   act: relu # relu
   dropout: 0.0
-  agg: mean
+  agg: add
   normalize_adj: False
   head: custom
 optim:
   optimizer: adam
+  scheduler: cos
   base_lr: 0.01
-  max_epoch: 200 # 200
+  max_epoch: 400 # 200

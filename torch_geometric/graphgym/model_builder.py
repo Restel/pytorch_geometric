@@ -9,6 +9,7 @@ from torch_geometric.graphgym.loss import compute_loss
 from torch_geometric.graphgym.models.gnn import GNN
 from torch_geometric.graphgym.optim import create_optimizer, create_scheduler
 from torch_geometric.graphgym.register import network_dict, register_network
+from torch_geometric.utils import negative_sampling
 
 register_network('gnn', GNN)
 
@@ -37,6 +38,22 @@ class GraphGymModule(LightningModule):
                     step_end_time=step_end_time)
 
     def training_step(self, batch, *args, **kwargs):
+        # if required resample negative supervision edges and add to the training batch (it should be by epoch when done properly)
+        if cfg.dataset.resample_negative:
+            neg_edge_index = negative_sampling(
+                edge_index=batch.edge_index, num_nodes=batch.num_nodes,
+                num_neg_samples=int(batch.edge_label_index.size(1) * cfg.dataset.edge_negative_sampling_ratio), method='sparse')
+            print(neg_edge_index.size())
+            edge_label_index = torch.cat(
+                [batch.edge_label_index, neg_edge_index],
+                dim=-1,
+            )
+            edge_label = torch.cat([
+                batch.edge_label,
+                batch.edge_label.new_zeros(neg_edge_index.size(1))
+            ], dim=0)
+            batch.edge_label_index = edge_label_index
+            batch.edge_label = edge_label
         return self._shared_step(batch, split="train")
 
     def validation_step(self, batch, *args, **kwargs):
