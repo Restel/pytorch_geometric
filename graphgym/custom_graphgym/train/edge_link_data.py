@@ -12,6 +12,7 @@ from torch_geometric.graphgym.loader import create_dataset, set_dataset_attr
 from torch_geometric.transforms import RandomLinkSplit
 from torch_geometric.loader import LinkNeighborLoader 
 from torch_geometric.data import Data
+from pytorch_lightning.accelerators import find_usable_cuda_devices
 
 def set_data_attr(data, name, value):
     data[name] = value
@@ -57,7 +58,7 @@ class CustomGraphGymDataModule(LightningDataModule):
         pw = cfg.num_workers > 0
         self._train_dataloader = LinkNeighborLoader(
             data=self.splits['train'],
-            num_neighbors=[-1],
+            num_neighbors=[-1,-1,-1,-1,-1,-1,-1,-1],
             batch_size=self.dataset.num_edges,
             edge_label_index= self.splits['train'].edge_label_index,
             edge_label= self.splits['train'].edge_label,
@@ -69,7 +70,7 @@ class CustomGraphGymDataModule(LightningDataModule):
 
         self._val_dataloader = LinkNeighborLoader(
             data=self.splits['val'],
-            num_neighbors=[-1],
+            num_neighbors=[-1,-1,-1,-1,-1,-1,-1,-1],
             batch_size=self.dataset.num_edges,
             edge_label_index= self.splits['val'].edge_label_index,
             edge_label= self.splits['val'].edge_label,
@@ -81,7 +82,7 @@ class CustomGraphGymDataModule(LightningDataModule):
 
         self._test_dataloader = LinkNeighborLoader(
             data=self.splits['test'],
-            num_neighbors=[-1],
+            num_neighbors=[-1,-1,-1,-1,-1,-1,-1,-1],
             batch_size=self.dataset.num_edges,
             edge_label_index= self.splits['test'].edge_label_index,
             edge_label= self.splits['test'].edge_label,
@@ -123,7 +124,7 @@ def train(
         default_root_dir=cfg.out_dir,
         max_epochs=cfg.optim.max_epoch,
         accelerator=cfg.accelerator,
-        devices="auto" if not torch.cuda.is_available() else cfg.devices,
+        devices=find_usable_cuda_devices(cfg.devices)
     )
 
     trainer.fit(model, datamodule=datamodule)
