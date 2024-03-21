@@ -4,6 +4,10 @@ import os
 import custom_graphgym  # noqa, register custom modules
 import torch
 
+import logging
+import os
+import custom_graphgym  # noqa, register custom modules
+import torch
 from torch_geometric import seed_everything
 from torch_geometric.graphgym.cmd_args import parse_args
 from torch_geometric.graphgym.config import (
@@ -19,6 +23,7 @@ from torch_geometric.graphgym.train import GraphGymDataModule, train
 from torch_geometric.graphgym.utils.agg_runs import agg_runs
 from torch_geometric.graphgym.utils.comp_budget import params_count
 from torch_geometric.graphgym.utils.device import auto_select_device
+from torch_geometric.graphgym import register
 
 if __name__ == '__main__':
     # Load cmd line args
@@ -31,21 +36,25 @@ if __name__ == '__main__':
     dump_cfg(cfg)
     # Repeat for different random seeds
     for i in range(args.repeat):
-        set_run_dir(cfg.out_dir)
+        set_run_dir(cfg.out_dir, i)
         set_printing()
         # Set configurations for each run
         cfg.seed = cfg.seed + 1
         seed_everything(cfg.seed)
-        auto_select_device()
+        auto_select_device() # if not set in the yaml config, set to cuda accelerator if available and single device
         # Set machine learning pipeline
-        datamodule = GraphGymDataModule()
+        datamodule = register.train_dict["CustomGraphGymDataModule"]()
+        cfg.share.dim_out = 1 # TODO fix this bug, that happend in set_dataset_info because dataset._data.y might have node labels (not edge labels)
+        print(f"DEBUG MESSAGE {cfg.share.dim_out}")
+        cfg.share.num_splits = 3 # TODO fix this bug
         model = create_model()
         # Print model info
         logging.info(model)
         logging.info(cfg)
         cfg.params = params_count(model)
         logging.info('Num parameters: %s', cfg.params)
-        train(model, datamodule, logger=True)
+        # Call the custom training function
+        register.train_dict["train_pl"](model, datamodule, logger=True)
 
     # Aggregate results from different seeds
     agg_runs(cfg.out_dir, cfg.metric_best)
