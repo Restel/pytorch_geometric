@@ -10,6 +10,7 @@ from .svd_feature_reduction import SVDFeatureReduction
 from .remove_training_classes import RemoveTrainingClasses
 from .random_node_split import RandomNodeSplit
 from .random_link_split import RandomLinkSplit
+from .temporal_link_split import TemporalLinkSplit
 from .node_property_split import NodePropertySplit
 from .mask import IndexToMask, MaskToIndex
 from .pad import Pad
@@ -74,6 +75,7 @@ general_transforms = [
     'RemoveTrainingClasses',
     'RandomNodeSplit',
     'RandomLinkSplit',
+    'TemporalLinkSplit',
     'NodePropertySplit',
     'IndexToMask',
     'MaskToIndex',

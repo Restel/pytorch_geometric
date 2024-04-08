@@ -1,5 +1,6 @@
 # flake8: noqa
 
+from .grn import GRNDataset
 from .karate import KarateClub
 from .tu_dataset import TUDataset
 from .gnn_benchmark_dataset import GNNBenchmarkDataset
@@ -107,6 +108,7 @@ from .ba_shapes import BAShapes
 import torch_geometric.datasets.utils
 
 homo_datasets = [
+    'GRNDataset',
     'KarateClub',
     'TUDataset',
     'GNNBenchmarkDataset',
