@@ -142,6 +142,9 @@ def set_cfg(cfg):
     # Whether random split or use custom split: random / custom
     cfg.dataset.split_mode = 'random'
 
+    #
+    cfg.dataset.split_type = 'temporal' # temporal/static
+
     # Whether to use an encoder for general attribute features
     cfg.dataset.encoder = True
 
