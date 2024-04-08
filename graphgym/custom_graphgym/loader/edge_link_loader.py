@@ -1,8 +1,7 @@
-from torch_geometric.datasets import QM7b, Planetoid
+from torch_geometric.datasets import QM7b, Planetoid, GRNDataset
 from torch_geometric.graphgym.register import register_loader
 from torch_geometric.graphgym.config import cfg
 import torch_geometric.transforms as T
-
 
 @register_loader('custom')
 def load_dataset_example(format, name, dataset_dir):
@@ -15,12 +14,18 @@ def load_dataset_example(format, name, dataset_dir):
         elif name in ['Cora', 'CiteSeer', 'PubMed']:
             #dataset = Planetoid(dataset_dir, name, transform = T.NormalizeFeatures()) # TODO make a config parameter 
             dataset = Planetoid(dataset_dir, name) 
+        if name in ['Ecoli']:
+            dataset = GRNDataset(dataset_dir, name)
         else:
-            raise ValueError(f"'{name}' not support")
+            raise ValueError(f"'{name}' is not supported")
 
     if cfg.dataset.task == 'link_pred':
-        delattr(dataset.data, 'y')
-        delattr(dataset.data, 'train_mask')
-        delattr(dataset.data, 'val_mask')
-        delattr(dataset.data, 'test_mask') # for node-classification datasets
+        for data in dataset.data:
+            try: 
+                delattr(data, 'y')
+                delattr(data, 'train_mask')
+                delattr(data, 'val_mask')
+                delattr(data, 'test_mask') # for node-classification datasets
+            except: 
+                Exception
     return dataset
