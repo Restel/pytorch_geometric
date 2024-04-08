@@ -214,15 +214,19 @@ def set_dataset_info(dataset):
         cfg.share.dim_out = 1
 
     # count number of dataset splits
-    cfg.share.num_splits = 1
-    for key in dataset._data.keys():
-        if 'val' in key:
-            cfg.share.num_splits += 1
-            break
-    for key in dataset._data.keys():
-        if 'test' in key:
-            cfg.share.num_splits += 1
-            break
+    auto_num_splits = 1
+    try:
+        for key in dataset._data.keys():
+            if 'val' in key:
+                auto_num_splits += 1
+                break
+        for key in dataset._data.keys():
+            if 'test' in key:
+                auto_num_splits += 1
+                break
+        cfg.share.num_splits = auto_num_splits
+    except Exception:
+        print('The number of splits is defined by the user')
 
 
 def create_dataset():
