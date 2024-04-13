@@ -12,6 +12,7 @@ from torch_geometric.transforms import BaseTransform
 from torch_geometric.typing import EdgeType
 from torch_geometric.utils import negative_sampling
 from torch_geometric.io import edge_mask, mask_tensor
+import random
 
 @functional_transform('temporal_link_split')
 class TemporalLinkSplit(BaseTransform):
@@ -57,16 +58,21 @@ class TemporalLinkSplit(BaseTransform):
         test_edges = test_data.edge_index
         test_label_edges = test_label_data.edge_index
         
-        train_label_edges_index = edge_mask(val_edges, train_edges)
-        val_label_edges_index = edge_mask(test_edges, val_edges)
-        test_label_edges_index = edge_mask(test_label_edges, test_edges)
+        train_label_edges_mask = edge_mask(val_edges, train_edges) # filter val edges that are in train
+        val_label_edges_mask = edge_mask(test_edges, val_edges)
+        test_label_edges_mask = edge_mask(test_label_edges, test_edges)
 
+        #train_label_edges_index = torch.tensor([True if x and random.random()<0.25 else False for x in train_label_edges_index]) # downsampling
         
-        num_train = train_label_edges_index.sum().item() # number of supervision edges
-        num_val = val_label_edges_index.sum().item()
-        num_test = test_label_edges_index.sum().item()
+        
+        num_train = train_label_edges_mask.sum().item() # number of supervision edges
+        num_val = val_label_edges_mask.sum().item()
+        num_test = test_label_edges_mask.sum().item()
 
-        num_neg_train = int(num_train * self.neg_sampling_ratio)
+
+        num_neg_train = 0
+        if self.add_negative_train_samples:
+            num_neg_train = int(num_train * self.neg_sampling_ratio)
         num_neg_val = int(num_val * self.neg_sampling_ratio)
         num_neg_test = int(num_test * self.neg_sampling_ratio)
 
@@ -91,19 +97,23 @@ class TemporalLinkSplit(BaseTransform):
         
         self._create_label(
             val_data,
-            train_label_edges_index,
+            train_label_edges_mask,
             neg_edge_index[:, num_neg_val + num_neg_test:],
             out=train_data,
         )
+
+        #val_label_edges_index_easy = torch.tensor([not x for x in edge_mask(test_edges, train_data.edge_label_index)]) # for debugging add the edges from train label that are in the test edge_ind 2897
+        
+
         self._create_label(
             test_data,
-            val_label_edges_index,
+            val_label_edges_mask,
             neg_edge_index[:, :num_neg_val],
             out=val_data,
         )
         self._create_label(
             test_label_data,
-            test_label_edges_index,
+            test_label_edges_mask,
             neg_edge_index[:, num_neg_val:num_neg_val + num_neg_test],
             out=test_data,
         )
@@ -127,10 +137,10 @@ class TemporalLinkSplit(BaseTransform):
             edge_label = edge_label[index].contiguous()
             # Increment labels by one. Note that there is no need to increment
             # in case no negative edges are added.
-            if neg_edge_index.numel() > 0:
-                assert edge_label.dtype == torch.long
-                assert edge_label.size(0) == edge_index.size(1)
-                edge_label.add_(1)
+            # if neg_edge_index.numel() > 0:
+            #     assert edge_label.dtype == torch.long
+            #     assert edge_label.size(0) == edge_index.size(1)
+            edge_label.add_(1)
             if hasattr(out, self.key):
                 delattr(out, self.key)
         else:
