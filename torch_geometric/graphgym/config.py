@@ -199,7 +199,7 @@ def set_cfg(cfg):
     cfg.dataset.resample_negative = False
 
     # What transformation function is applied to the dataset
-    cfg.dataset.transform = 'none'
+    cfg.dataset.transform = []
 
     # Whether cache the splitted dataset
     # NOTE: it should be cautiouslly used, as cached dataset may not have

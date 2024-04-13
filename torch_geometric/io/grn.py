@@ -8,8 +8,12 @@ import torch
 from typing import List, Optional, Callable, Tuple
 
 
-grn_files = {'Ecoli': ['511145_v2005_sRDB04', 
+grn_files = {'Ecoli': ['511145_v2003_sRDB01',  
+                       '511145_v2005_sRDB04', 
+                       '511145_v2006_sRDB06',
                        '511145_v2011_sRDB11', 
+                       '511145_v2013_sRDB13', 
+                       '511145_v2014_sRDB16',
                        '511145_v2015_sRDB16', 
                        '511145_v2017_sRDB16', 
                        '511145_v2018_sRDB19', 
@@ -110,7 +114,7 @@ def read_grn_data(dir:str, name:str) -> Tuple[List[Data], List[str]]:
 
 def edge_mask(edge_index1, edge_index2):
     """Filter edges from edge_index1 that are in edge_index2 """
-    # Initialize mask with False values
+    # Initialize mask with True values
     mask = torch.ones(edge_index1.size(1), dtype=torch.bool)
     
     # Convert edge_index2 to a set for efficient containment checks

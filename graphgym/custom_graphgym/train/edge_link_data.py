@@ -15,6 +15,9 @@ from torch_geometric.data import Data
 from pytorch_lightning.accelerators import find_usable_cuda_devices
 from torch_geometric.io import edge_mask, mask_tensor
 from math import floor
+from torch_geometric.transforms import Compose, AddRandomWalkPE, AddLaplacianEigenvectorPE, AddRemainingSelfLoops
+
+
 
 def set_data_attr(data, name, value):
     data[name] = value
@@ -28,18 +31,49 @@ def set_split_attributes(split_data: Data, split: str) -> Data:
 import torch
 from torch_geometric.data import Data, DataLoader, InMemoryDataset
 from torch_geometric.utils import negative_sampling
-
+from typing import Callable
 from torch_geometric.data import Dataset
 
 class SingleGraphDataset(Dataset):
-    def __init__(self, data):
-        super(SingleGraphDataset, self).__init__(None, None, None)
+    def __init__(self, data: Data, transform: Optional[Callable] = None):
+        """
+        Initializes the dataset.
+
+        Args:
+            data (Data): A single instance of torch_geometric.data.Data.
+            transform (Callable, optional): A function that transforms data.
+        """
+        super(SingleGraphDataset, self).__init__()
         self.data = data
+        if transform is not None:
+            try: 
+                self.data = transform(self.data)
+            except Exception:
+                print(f"Issue with {transform} augmentation")
+        self._validate_dim_in()
+
+    def _validate_dim_in(self):
+        if cfg.share.dim_in != self.data.num_features:
+            cfg.share.dim_in = self.data.num_features
+            print(f'resetting share dim in for GNN model to match dataloader dim:  to {cfg.share.dim_in}')
+        
 
     def len(self):
+        """
+        Returns the number of graphs in the dataset.
+        """
         return 1
 
     def get(self, idx):
+        """
+        Gets the graph at a particular index (only one graph in this case).
+
+        Args:
+            idx (int): The index of the graph to retrieve.
+        
+        Returns:
+            Data: The graph data.
+        """
         return self.data
 
 
@@ -66,6 +100,7 @@ class FullBatchLinkDataLoader(DataLoader):
 class CustomGraphGymDataModule(LightningDataModule): 
     def __init__(self, split_type = 'static'):
         super().__init__(has_val=True, has_test=True)
+        self.transform = self._get_transforms_from_cfg()
         self.split_type = split_type
         self.dataset = create_dataset()
         self.num_points = len(self.dataset)
@@ -74,6 +109,21 @@ class CustomGraphGymDataModule(LightningDataModule):
         self.current_split = 0
         self._create_dataset_splits(self.split_type)
         self._create_data_loaders()
+
+    def _get_transforms_from_cfg(self):
+        transform_list = []
+        for t in cfg.dataset.transform:
+            print(t)
+            if t == 'laplacian_pe':
+                transform_list.append(AddLaplacianEigenvectorPE(k=50, attr_name=None))
+            elif t == 'random_walk_pe':
+                transform_list.append(AddRandomWalkPE(30, attr_name=None))
+            else:
+                raise ValueError('Unsupported transform')
+        if transform_list:
+            return Compose(transform_list)
+        else:
+            return None 
 
     def _create_dataset_splits(self, split_type):
         add_negative_train_samples = not cfg.dataset.resample_negative
@@ -94,6 +144,25 @@ class CustomGraphGymDataModule(LightningDataModule):
         if  cfg.share.dim_in == 1:
             cfg.share.dim_in = splits[0].x.shape[1]
             print(f'resetting share dim in for GNN model to: {cfg.share.dim_in}')
+
+    def _get_split_statistics(self):
+        import pandas as pd
+        statistics = [] # a list of dataframes with split statistics
+        index = ['train', 'val', 'test']
+        for i in range(len(self.splits)):
+            res = {'# MPP edges': [], '# label pos edges': [], '# label neg edges': []}
+            for split in index:
+                data = self.splits[i][split]
+                res['# MPP edges'].append(data.edge_index.size(1))
+                num_pos_edges = data.edge_label[data.edge_label == 1].size(0)
+                num_neg_edges = data.edge_label[data.edge_label == 0].size(0)
+                res['# label pos edges'].append(num_pos_edges)
+                res['# label neg edges'].append(num_neg_edges)
+            df_res = pd.DataFrame(res, index = index)
+            statistics.append(df_res)
+        return statistics
+
+                
     
     def _move_to_next_split(self):
         if self.current_split + 1 >= self.number_of_possible_splits:
@@ -109,7 +178,7 @@ class CustomGraphGymDataModule(LightningDataModule):
     def _create_data_loader(self, split):
         split_data = self.splits[self.current_split][split]
         split_data.edge_index = split_data.edge_index.contiguous()
-        split_data_wrapped = SingleGraphDataset(split_data)
+        split_data_wrapped = SingleGraphDataset(split_data, transform=self.transform)
         pw = cfg.num_workers > 0
         shuffle = True if split == 'train' else False
         return FullBatchLinkDataLoader(split_data_wrapped, 
@@ -124,13 +193,13 @@ class CustomGraphGymDataModule(LightningDataModule):
         self._val_dataloader = self._create_data_loader('val')
         self._test_dataloader = self._create_data_loader('test')
 
-    def train_dataloader(self) -> LinkNeighborLoader:
+    def train_dataloader(self) -> FullBatchLinkDataLoader:
         return self._train_dataloader
 
-    def val_dataloader(self) -> LinkNeighborLoader:
+    def val_dataloader(self) -> FullBatchLinkDataLoader:
         return self._val_dataloader
 
-    def test_dataloader(self) -> LinkNeighborLoader:
+    def test_dataloader(self) -> FullBatchLinkDataLoader:
         return self._test_dataloader
     
 
