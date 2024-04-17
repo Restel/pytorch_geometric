@@ -107,7 +107,7 @@ def read_grn_data(dir:str, name:str) -> Tuple[List[Data], List[str]]:
     for graph in range(num_graphs):
         edge_idx = torch.tensor(np.array(edge_list_mapped[graph]).transpose(), dtype=torch.long)
         edge_attr = torch.tensor(edge_labels[graph], dtype=torch.long)
-        data = Data(x=X, edge_attr=edge_attr, y=edge_attr, edge_index=edge_idx)
+        data = Data(x=X, edge_attr=edge_attr, edge_index=edge_idx)
         datalist.append(data)
 
     return datalist, years
