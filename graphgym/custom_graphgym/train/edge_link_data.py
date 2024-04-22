@@ -16,7 +16,7 @@ from pytorch_lightning.accelerators import find_usable_cuda_devices
 from torch_geometric.io import edge_mask, mask_tensor
 from math import floor
 from torch_geometric.transforms import Compose, AddRandomWalkPE, AddLaplacianEigenvectorPE, AddRemainingSelfLoops
-
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
 
 def set_data_attr(data, name, value):
@@ -95,8 +95,118 @@ class FullBatchLinkDataLoader(DataLoader):
         # of the dataset or 1 if processing the whole dataset at once.
         super(FullBatchLinkDataLoader, self).__init__(dataset, batch_size, shuffle, collate_fn=collate, **kwargs)
 
-
 @register_train("CustomGraphGymDataModule")
+class CustomGraphGymDataModule(LightningDataModule): 
+    def __init__(self, split_type = 'static'):
+        super().__init__(has_val=True, has_test=True)
+        self.transform = self._get_transforms_from_cfg()
+        self.split_type = split_type
+        self.dataset = create_dataset()
+        self.num_points = len(self.dataset)
+        self.number_of_possible_splits = len(self.dataset) - 3 if split_type=='temporal_iterative' else 1
+        self.splits = {'train': None, 'val': None, 'test': None, 'final_test': None}
+        self._create_dataset_splits(self.split_type)
+        self._create_data_loaders()
+        
+
+    def _get_transforms_from_cfg(self):
+        transform_list = []
+        for t in cfg.dataset.transform:
+            print(t)
+            if t == 'laplacian_pe':
+                transform_list.append(AddLaplacianEigenvectorPE(k=50, attr_name=None))
+            elif t == 'random_walk_pe':
+                transform_list.append(AddRandomWalkPE(30, attr_name=None))
+            else:
+                raise ValueError('Unsupported transform')
+        if transform_list:
+            return Compose(transform_list)
+        else:
+            return None 
+
+    def _create_dataset_splits(self, split_type):
+        add_negative_train_samples = not cfg.dataset.resample_negative
+        if split_type == 'static':
+            f = RandomLinkSplit(num_val=0.1, num_test=0.1, is_undirected=False,
+                        add_negative_train_samples=add_negative_train_samples, 
+                        neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio) #TODO include disjoint ratio
+            splits = f(self.dataset[8])
+            for split_data, split_name in zip(splits, ['train', 'val', 'test']):
+                self.splits[split_name] = split_data
+            final_test = Data()
+            final_test.edge_index = self.splits['test'].edge_index # MPP edges for the final evaluation
+            final_test.x = self.splits['test'].x # MPP features for the final evaluation
+
+            final_split_edges = self.dataset[10].edge_index
+            final_split_edges_pos_label = final_split_edges[:,edge_mask(final_split_edges, self.splits['test'].edge_index)] # positive supervision edges
+            num_final_edges = final_split_edges_pos_label.size(1)
+            # print(num_final_edges)
+            # print(num_final_edges * cfg.dataset.edge_negative_sampling_ratio)
+            final_split_edges_neg_label = negative_sampling(final_split_edges,
+                                                            num_neg_samples = int(num_final_edges * cfg.dataset.edge_negative_sampling_ratio)) # negative supervision edges
+            final_test.edge_label_index = torch.cat([final_split_edges_pos_label, final_split_edges_neg_label], dim=-1)
+            final_test.edge_label = torch.cat([torch.ones(final_split_edges_pos_label.size(1)), torch.zeros(final_split_edges_neg_label.size(1))], dim=0)
+            self.splits['final_test'] = final_test
+            
+        elif split_type == 'temporal':
+            f = TemporalLinkSplit([3,4,8,10], add_negative_train_samples=add_negative_train_samples, neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio)
+            splits = f(self.dataset) 
+            for split_data, split_name in zip(splits, ['train', 'val', 'test', 'final_test']):
+                self.splits[split_name] = split_data
+        else:
+            raise ValueError("unsupported type split and dataset configuration")
+        if  cfg.share.dim_in == 1:
+            cfg.share.dim_in = self.splits['train'].x.shape[1]
+            print(f'resetting share dim in for GNN model to: {cfg.share.dim_in}')
+
+    def _get_split_statistics(self):
+        import pandas as pd
+        statistics = [] # a list of dataframes with split statistics
+        index = ['train', 'val', 'test', 'final_test']
+        for i in range(self.number_of_possible_splits):
+            res = {'# MPP edges': [], '# label pos edges': [], '# label neg edges': []}
+            for split in index:
+                data = self.splits[split]
+                res['# MPP edges'].append(data.edge_index.size(1))
+                num_pos_edges = data.edge_label[data.edge_label == 1].size(0)
+                num_neg_edges = data.edge_label[data.edge_label == 0].size(0)
+                res['# label pos edges'].append(num_pos_edges)
+                res['# label neg edges'].append(num_neg_edges)
+            df_res = pd.DataFrame(res, index = index)
+            statistics.append(df_res)
+        return statistics
+
+
+    def _create_data_loader(self, split):
+        split_data = self.splits[split]
+        split_data.edge_index = split_data.edge_index.contiguous()
+        split_data_wrapped = SingleGraphDataset(split_data, transform=self.transform)
+        pw = cfg.num_workers > 0
+        shuffle = True if split == 'train' else False
+        return FullBatchLinkDataLoader(split_data_wrapped, 
+                                        batch_size=1, 
+                                        num_workers=cfg.num_workers,
+                                        pin_memory=False,
+                                        persistent_workers=pw,
+                                        shuffle=shuffle)
+
+    def _create_data_loaders(self):
+        self._train_dataloader = self._create_data_loader('train')
+        self._val_dataloader = self._create_data_loader('val')
+        self._test_dataloader = self._create_data_loader('test')
+        self._final_test_dataloader = self._create_data_loader('final_test')
+
+    def train_dataloader(self) -> FullBatchLinkDataLoader:
+        return self._train_dataloader
+
+    def val_dataloader(self) -> FullBatchLinkDataLoader:
+        return self._val_dataloader
+
+    def test_dataloader(self) -> FullBatchLinkDataLoader:
+        return [self._test_dataloader, self._final_test_dataloader]
+
+
+@register_train("CustomGraphGymDataModuleSequential")
 class CustomGraphGymDataModule(LightningDataModule): 
     def __init__(self, split_type = 'static'):
         super().__init__(has_val=True, has_test=True)
@@ -142,7 +252,7 @@ class CustomGraphGymDataModule(LightningDataModule):
         else:
             raise ValueError("unsupported type split and dataset configuration")
         if  cfg.share.dim_in == 1:
-            cfg.share.dim_in = splits[0].x.shape[1]
+            cfg.share.dim_in = splits['train'].x.shape[1]
             print(f'resetting share dim in for GNN model to: {cfg.share.dim_in}')
 
     def _get_split_statistics(self):
@@ -184,7 +294,7 @@ class CustomGraphGymDataModule(LightningDataModule):
         return FullBatchLinkDataLoader(split_data_wrapped, 
                                         batch_size=1, 
                                         num_workers=cfg.num_workers,
-                                        pin_memory=True,
+                                        pin_memory=False,
                                         persistent_workers=pw,
                                         shuffle=shuffle)
 
@@ -203,7 +313,7 @@ class CustomGraphGymDataModule(LightningDataModule):
         return self._test_dataloader
     
 
-@register_train("train_pl")
+@register_train("train_pl_default")
 def train(
     model,
     datamodule,
@@ -236,25 +346,25 @@ def train(
     # trainer = Trainer(accelerator="cuda", devices=find_usable_cuda_devices(cfg.devices))
     #  pl 2.1.0 https://lightning.ai/docs/pytorch/2.1.0/accelerators/gpu_basic.html
 
-class GlobalEpochCallback(pl.Callback):
-    def __init__(self, total_epochs):
-        super().__init__()
-        self.total_epochs = total_epochs
-        self.global_epoch = 0
+# class GlobalEpochCallback(pl.Callback):
+#     def __init__(self, total_epochs):
+#         super().__init__()
+#         self.total_epochs = total_epochs
+#         self.global_epoch = 0
 
-    def on_epoch_end(self, trainer, pl_module):
-        self.global_epoch += 1
-        if self.global_epoch >= self.total_epochs:
-            trainer.should_stop = True  # Manually signal to stop training
+#     def on_epoch_end(self, trainer, pl_module):
+#         self.global_epoch += 1
+#         if self.global_epoch >= self.total_epochs:
+#             trainer.should_stop = True  # Manually signal to stop training
         
-class ResetEpochNumberCallback(pl.Callback):
-    def __init__(self):
-        super().__init__()
-        self._epoch = 0
+# class ResetEpochNumberCallback(pl.Callback):
+#     def __init__(self):
+#         super().__init__()
+#         self._epoch = 0
             
-    def on_train_start(self, trainer, pl_module):
-        trainer.fit_loop.epoch_progress.current.completed = self._epoch 
-        print("Training starts with epoch set to",trainer.current_epoch)
+#     def on_train_start(self, trainer, pl_module):
+#         trainer.fit_loop.epoch_progress.current.completed = self._epoch 
+#         print("Training starts with epoch set to",trainer.current_epoch)
 
 
 class ManageDataSplitsCallback(pl.Callback):
@@ -307,7 +417,7 @@ class ResetLearningRateCallback(pl.Callback):
                     param_group['lr'] = self.initial_lr
 
 
-@register_train("train_pl_temporal")
+@register_train("train_pl")
 def train(
     model,
     datamodule,
@@ -322,13 +432,16 @@ def train(
     )
     epochs_per_split = cfg.optim.max_epoch // datamodule.number_of_possible_splits
 
-    reset_lr_callback = ResetLearningRateCallback(initial_lr=0.01)
 
     # Include the callback in your callbacks list
-    callbacks = [
-        manage_splits_cb,
-        reset_lr_callback,
-    ]
+    callbacks = []
+
+    if cfg.dataset.split == 'temporal_iterative':
+        callbacks.append(manage_splits_cb)
+    if cfg.optim.early_stop:
+        callbacks.append(EarlyStopping(monitor=cfg.optim.early_stop_criterion, 
+                                       mode="min", 
+                                       patience = cfg.optim.patience))
     if logger:
         callbacks.append(LoggerCallback())
     if cfg.train.enable_ckpt:
