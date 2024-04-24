@@ -13,6 +13,7 @@ from torch_geometric.typing import EdgeType
 from torch_geometric.utils import negative_sampling
 from torch_geometric.io import edge_mask, mask_tensor
 import random
+from torch_geometric.transforms import RandomLinkSplit
 
 @functional_transform('temporal_link_split')
 class TemporalLinkSplit(BaseTransform):
@@ -41,89 +42,94 @@ class TemporalLinkSplit(BaseTransform):
         assert len(self.indices) == 4
         
         
+        data_0 = copy.copy(data[self.indices[0]])
+        data_1 = copy.copy(data[self.indices[1]])
+        data_2 = copy.copy(data[self.indices[2]])
+        data_3 = copy.copy(data[self.indices[3]])
         
-        train_data = copy.copy(data[self.indices[0]])
-        # TODO split train into MPP and supervision randomly
-        train_data.edge_label_index = train_data.edge_index
-        train_data.edge_label = torch.ones(train_data.edge_index.size(1)) # all train MPP edges are incuded in supervision
+        
+        train_data = Data()
+        val_data = Data()
+        test_data = Data()
+        final_test_data = Data()
 
         # TODO add negative edges to train
         if self.add_negative_train_samples:
             raise NotImplementedError('Negative sampling for train not supported yet')
 
-        val_data = copy.copy(data[self.indices[1]])
-        test_data = copy.copy(data[self.indices[2]])
-        final_test_data = copy.copy(data[self.indices[3]]) # MPP edges and attributes from the previous snapshot
+        # train construction
+        f = RandomLinkSplit(num_val=0, num_test=0, 
+                            is_undirected=False,
+                            add_negative_train_samples=self.add_negative_train_samples, 
+                            disjoint_train_ratio=0.999,
+                            neg_sampling_ratio=self.neg_sampling_ratio)
+        
+        train_data, _, _ = f(data_0)
+        #train_data.edge_index = data_0.edge_index
+        #train_data.x = data_0.x
+        #train_data.edge_attr = data_0.edge_attr
+        #train_data.edge_label_index = train_data.edge_index # TODO split train into MPP and supervision randomly if cfg.disjoint_ratio
+        #train_data.edge_label = torch.ones(train_data.edge_label_index.size(1)) # all train MPP edges are incuded in supervision
 
         
-        assert isinstance(train_data, Data)
-        assert isinstance(val_data, Data)
-        assert isinstance(test_data, Data)
-        assert isinstance(final_test_data, Data)
-
-        # full unfiltered edges
-        train_edges = train_data.edge_index
-        val_edges = val_data.edge_index
-        test_edges = test_data.edge_index
-        final_test_edges = final_test_data.edge_index
-
-
-        # filter edges based on the next graph in the sequence
-        val_label_edges_mask = edge_mask(val_edges, train_edges) # val supervision edges
-        test_label_edges_mask = edge_mask(test_edges, val_edges) # test supervision edges
-        final_test_label_edges_mask = edge_mask(final_test_edges, test_edges) # final test supervision edges
-    
-
-        
+        # val construction
+        val_data.edge_index = data_0.edge_index # val MPP = train MPP + supervision edges
+        val_data.x = train_data.x # val MPP = train MPP edges
+        val_data.edge_attr = data_0.edge_attr
+        val_label_edges_mask = edge_mask(data_1.edge_index, val_data.edge_index) # val supervision edges
         num_val = val_label_edges_mask.sum().item()
-        num_test = test_label_edges_mask.sum().item()
-        final_test = final_test_label_edges_mask.sum().item()
-
-
         num_neg_val = int(num_val * self.neg_sampling_ratio)
-        neg_edge_index_val = negative_sampling(val_edges, 
+        neg_edge_index_val = negative_sampling(val_data.edge_index, 
                                                num_neg_samples=num_neg_val,
                                                method='sparse')
 
-        num_neg_test = int(num_test * self.neg_sampling_ratio)
-        neg_edge_index_test = negative_sampling(test_edges, 
-                                               num_neg_samples=num_neg_test,
-                                               method='sparse')
-
-        num_neg_final_test = int(final_test * self.neg_sampling_ratio)
-        neg_edge_index_final_test = negative_sampling(final_test_edges, 
-                                               num_neg_samples=num_neg_final_test,
-                                               method='sparse')
-        
- 
-        # TODO Adjust ratio if not enough negative edges exist
-
+        # proceed with label construction using data_1.edge_index as input, 
+        # val_label_edges_mask, neg_edge_index_val as index val_data as output
         self._create_label(
-            val_data,
+            data_1,
             val_label_edges_mask,
             neg_edge_index_val,
             out=val_data,
-        )        
+        ) 
 
+        # test construction
+        test_data.edge_index = data_1.edge_index 
+        test_data.x = data_1.x 
+        test_label_edges_mask = edge_mask(data_2.edge_index, test_data.edge_index) # val supervision edges
+        num_test = test_label_edges_mask.sum().item()
+        num_neg_test = int(num_test * self.neg_sampling_ratio)
+        neg_edge_index_test = negative_sampling(test_data.edge_index, 
+                                               num_neg_samples=num_neg_test,
+                                               method='sparse')
+
+        # TODO proceed with label construction using data_2.edge_index as input, 
+        # test_label_edges_mask, neg_edge_index_test as index test_data as output
         self._create_label(
-            test_data,
+            data_2,
             test_label_edges_mask,
             neg_edge_index_test,
             out=test_data,
         )
 
+        # final_test construction
+        final_test_data.edge_index = test_data.edge_index # val MPP = train MPP edges
+        final_test_data.x = test_data.x # val MPP = train MPP edges
+        final_test_label_edges_mask = edge_mask(data_3.edge_index, final_test_data.edge_index) 
+        num_final_test = final_test_label_edges_mask.sum().item()
+        num_neg_final_test = int(num_final_test * self.neg_sampling_ratio)
+        neg_edge_index_final_test = negative_sampling(final_test_data.edge_index, 
+                                               num_neg_samples=num_neg_final_test,
+                                               method='sparse')
         self._create_label(
-            final_test_data,
+            data_3,
             final_test_label_edges_mask,
             neg_edge_index_final_test,
             out=final_test_data,
         )
+ 
+        # TODO Adjust ratio if not enough negative edges exist
 
-        # Create data splits:
-        print('DEBUG')
-        self._split(val_data, ~val_label_edges_mask)
-        self._split(test_data, ~test_label_edges_mask)
-        self._split(final_test_data, ~final_test_label_edges_mask)
+
 
 
         

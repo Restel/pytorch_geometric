@@ -128,7 +128,7 @@ class CustomGraphGymDataModule(LightningDataModule):
         add_negative_train_samples = not cfg.dataset.resample_negative
         if split_type == 'static':
             f = RandomLinkSplit(num_val=0.1, num_test=0.1, is_undirected=False,
-                        add_negative_train_samples=add_negative_train_samples, 
+                        add_negative_train_samples=add_negative_train_samples, disjoint_train_ratio=0.99,
                         neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio) #TODO include disjoint ratio
             splits = f(self.dataset[8])
             for split_data, split_name in zip(splits, ['train', 'val', 'test']):
@@ -149,7 +149,7 @@ class CustomGraphGymDataModule(LightningDataModule):
             self.splits['final_test'] = final_test
             
         elif split_type == 'temporal':
-            f = TemporalLinkSplit([3,4,8,10], add_negative_train_samples=add_negative_train_samples, neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio)
+            f = TemporalLinkSplit([3,5,9,10], add_negative_train_samples=add_negative_train_samples, neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio)
             splits = f(self.dataset) 
             for split_data, split_name in zip(splits, ['train', 'val', 'test', 'final_test']):
                 self.splits[split_name] = split_data
