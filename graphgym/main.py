@@ -8,7 +8,7 @@ import logging
 import os
 import custom_graphgym  # noqa, register custom modules
 import torch
-from torch_geometric import seed_everything
+from pytorch_lightning import seed_everything
 from torch_geometric.graphgym.cmd_args import parse_args
 from torch_geometric.graphgym.config import (
     cfg,
@@ -26,7 +26,7 @@ from torch_geometric.graphgym.utils.device import auto_select_device
 from torch_geometric.graphgym import register
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2,7"
     # Load cmd line args
     args = parse_args()
     # Load config file
@@ -41,12 +41,11 @@ if __name__ == '__main__':
         set_printing()
         # Set configurations for each run
         cfg.seed = cfg.seed + 1
-        seed_everything(cfg.seed)
+        seed_everything(cfg.seed, workers=True)
         auto_select_device() # if not set in the yaml config, set to cuda accelerator if available and single device
         # Set machine learning pipeline
         datamodule = register.train_dict["CustomGraphGymDataModule"](split_type = cfg.dataset.split_type)
         cfg.share.dim_out = 1 # TODO fix this bug, that happend in set_dataset_info because dataset._data.y might have node labels (not edge labels)
-        print(f"DEBUG MESSAGE {cfg.share.dim_out}")
         cfg.share.num_splits = 3 # TODO fix this bug
         model = create_model()
         # Print model info
@@ -55,10 +54,7 @@ if __name__ == '__main__':
         cfg.params = params_count(model)
         logging.info('Num parameters: %s', cfg.params)
         # Call the custom training function
-        if cfg.dataset.split_type == 'temporal':
-            register.train_dict["train_pl_temporal"](model, datamodule, logger=True)
-        else:
-            register.train_dict["train_pl"](model, datamodule, logger=True)
+        register.train_dict["train_pl"](model, datamodule, logger=True)
 
     # Aggregate results from different seeds
     agg_runs(cfg.out_dir, cfg.metric_best)

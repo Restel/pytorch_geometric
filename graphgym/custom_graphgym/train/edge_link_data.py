@@ -17,7 +17,7 @@ from torch_geometric.io import edge_mask, mask_tensor
 from math import floor
 from torch_geometric.transforms import Compose, AddRandomWalkPE, AddLaplacianEigenvectorPE, AddRemainingSelfLoops
 from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-
+import numpy as np
 
 def set_data_attr(data, name, value):
     data[name] = value
@@ -128,8 +128,8 @@ class CustomGraphGymDataModule(LightningDataModule):
         add_negative_train_samples = not cfg.dataset.resample_negative
         if split_type == 'static':
             f = RandomLinkSplit(num_val=0.1, num_test=0.1, is_undirected=False,
-                        add_negative_train_samples=add_negative_train_samples, disjoint_train_ratio=0.99,
-                        neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio) #TODO include disjoint ratio
+                        add_negative_train_samples=add_negative_train_samples, 
+                        neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio) #TODO include disjoint ratio disjoint_train_ratio=0.99,
             splits = f(self.dataset[8])
             for split_data, split_name in zip(splits, ['train', 'val', 'test']):
                 self.splits[split_name] = split_data
@@ -138,7 +138,8 @@ class CustomGraphGymDataModule(LightningDataModule):
             final_test.x = self.splits['test'].x # MPP features for the final evaluation
 
             final_split_edges = self.dataset[10].edge_index
-            final_split_edges_pos_label = final_split_edges[:,edge_mask(final_split_edges, self.splits['test'].edge_index)] # positive supervision edges
+            final_split_edges_pos_label = final_split_edges[:,edge_mask(final_split_edges, 
+                                                                        torch.cat([self.splits['test'].edge_index,self.splits['test'].edge_label_index], dim=-1))] # positive supervision edges
             num_final_edges = final_split_edges_pos_label.size(1)
             # print(num_final_edges)
             # print(num_final_edges * cfg.dataset.edge_negative_sampling_ratio)
@@ -149,7 +150,7 @@ class CustomGraphGymDataModule(LightningDataModule):
             self.splits['final_test'] = final_test
             
         elif split_type == 'temporal':
-            f = TemporalLinkSplit([3,5,9,10], add_negative_train_samples=add_negative_train_samples, neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio)
+            f = TemporalLinkSplit([5,7,8,9,10], add_negative_train_samples=add_negative_train_samples, neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio)
             splits = f(self.dataset) 
             for split_data, split_name in zip(splits, ['train', 'val', 'test', 'final_test']):
                 self.splits[split_name] = split_data
@@ -416,6 +417,60 @@ class ResetLearningRateCallback(pl.Callback):
                 for param_group in opt.param_groups:
                     param_group['lr'] = self.initial_lr
 
+@register_train("train_optuna")
+def train(
+    model,
+    datamodule,
+    logger: bool = True,
+    trainer_config: Optional[dict] = None,
+):
+    
+    # Create the callback
+    manage_splits_cb = ManageDataSplitsCallback(
+        total_epochs=cfg.optim.max_epoch,
+        splits=datamodule.number_of_possible_splits
+    )
+    epochs_per_split = cfg.optim.max_epoch // datamodule.number_of_possible_splits
+
+
+    # Include the callback in your callbacks list
+    callbacks = []
+
+    if cfg.dataset.split == 'temporal_iterative':
+        callbacks.append(manage_splits_cb)
+    if cfg.optim.early_stop:
+        callbacks.append(EarlyStopping(monitor=cfg.optim.early_stop_criterion, 
+                                       mode="max", 
+                                       patience = cfg.optim.patience))
+    if logger:
+        callbacks.append(LoggerCallback())
+    if cfg.train.enable_ckpt:
+        ckpt_cbk = pl.callbacks.ModelCheckpoint(dirpath=get_ckpt_dir()
+                                                )
+        callbacks.append(ckpt_cbk)
+
+    trainer_config = trainer_config or {}
+
+    trainer = pl.Trainer(
+        **trainer_config,
+        enable_checkpointing=cfg.train.enable_ckpt,
+        callbacks=callbacks,
+        default_root_dir=cfg.out_dir,
+        max_epochs=cfg.optim.max_epoch,
+        accelerator=cfg.accelerator,
+        devices=find_usable_cuda_devices(cfg.devices),
+        deterministic=True,
+    )
+    trainer.fit(model, datamodule=datamodule)
+    # Access 'val_aupr' logged in pl_module
+    aupr_score, aupr_scores_conv = trainer.callback_metrics['val_aupr'], trainer.callback_metrics['val_aupr_convergence_values']
+    # check if the performance metrics converged
+    aupr_median = np.median(aupr_scores_conv)
+    if abs(np.min(aupr_scores_conv)-aupr_median)>0.05 or abs(np.max(aupr_scores_conv)-aupr_median)>0.05:
+        aupr_score = 0 # the sequence did not converge
+    if cfg.trainer_testing:
+        trainer.test(model, datamodule=datamodule)
+    return aupr_score 
 
 @register_train("train_pl")
 def train(
@@ -445,7 +500,14 @@ def train(
     if logger:
         callbacks.append(LoggerCallback())
     if cfg.train.enable_ckpt:
-        ckpt_cbk = pl.callbacks.ModelCheckpoint(dirpath=get_ckpt_dir())
+        ckpt_cbk = pl.callbacks.ModelCheckpoint(dirpath=get_ckpt_dir(),
+                                                filename = 'best_epoch',
+                                                monitor='val_aupr',
+                                                mode='max',
+                                                every_n_epochs=1,
+                                                save_top_k=1,
+                                                save_weights_only=False
+                                                )
         callbacks.append(ckpt_cbk)
 
     trainer_config = trainer_config or {}
@@ -458,7 +520,7 @@ def train(
         max_epochs=cfg.optim.max_epoch,
         accelerator=cfg.accelerator,
         devices=find_usable_cuda_devices(cfg.devices),
-        reload_dataloaders_every_n_epochs=epochs_per_split,
+        deterministic=True,
     )
 
 
@@ -477,3 +539,40 @@ def train(
     # # Find two GPUs on the system that are not already occupied
     # trainer = Trainer(accelerator="cuda", devices=find_usable_cuda_devices(cfg.devices))
     #  pl 2.1.0 https://lightning.ai/docs/pytorch/2.1.0/accelerators/gpu_basic.html_temporal
+
+@register_train("eval_pl")
+def evaluate_on_test(
+    model,
+    datamodule,
+    logger: bool = True,
+    trainer_config: Optional[dict] = None,
+):
+    
+    # Create the callback
+    manage_splits_cb = ManageDataSplitsCallback(
+        total_epochs=cfg.optim.max_epoch,
+        splits=datamodule.number_of_possible_splits
+    )
+    epochs_per_split = cfg.optim.max_epoch // datamodule.number_of_possible_splits
+
+
+    # Include the callback in your callbacks list
+    callbacks = []
+
+    if logger:
+        callbacks.append(LoggerCallback())
+
+    trainer_config = trainer_config or {}
+
+    trainer = pl.Trainer(
+        **trainer_config,
+        enable_checkpointing=cfg.train.enable_ckpt,
+        callbacks=callbacks,
+        default_root_dir=cfg.out_dir,
+        max_epochs=cfg.optim.max_epoch,
+        accelerator=cfg.accelerator,
+        devices=find_usable_cuda_devices(cfg.devices),
+        reload_dataloaders_every_n_epochs=epochs_per_split,
+    )
+
+    trainer.test(model, datamodule=datamodule)

@@ -52,14 +52,10 @@ class ExampleGNNEdgeHead(torch.nn.Module):
                 raise ValueError(f"Unknown edge decoding "
                                  f"'{cfg.model.edge_decoding}'")
 
-    def _apply_index(self, batch):
-        index = f'{batch.split}_edge_index'
-        label = f'{batch.split}_edge_label'
-        return batch.x[batch[index]], batch[label]
 
     def forward(self, batch):
         if cfg.model.edge_decoding != 'concat':
-            batch = self.layer_post_mp(batch) # encode using batch.x batch.edge_index
+            batch = self.layer_post_mp(batch) # encode batch.x (node features) using MLP
         pred, label = batch.x[batch.edge_label_index], batch.edge_label # test using only supervision edges
         nodes_first = pred[0]
         nodes_second = pred[1]

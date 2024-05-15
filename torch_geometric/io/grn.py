@@ -93,6 +93,11 @@ def read_grn_data(dir:str, name:str) -> Tuple[List[Data], List[str]]:
 
     # map nodes in each grn dataset and edge to its global unique id 
     node_id_list = list(unique_nodes)
+    print(node_id_list)
+    perm = torch.randperm(len(node_id_list))
+    node_id_list = [node_id_list[i] for i in perm] # shuffle the gene list
+    print(node_id_list)
+
     node_id_mapping = {id_str: idx for idx, id_str in enumerate(node_id_list)}
 
     edge_list_mapped = [

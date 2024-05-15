@@ -1,0 +1,46 @@
+accelerator: cuda
+dataset:
+  edge_encoder: false
+  edge_encoder_name: Bond
+  format: PyG
+  name: Ecoli
+  node_encoder: false
+  node_encoder_name: Atom
+  resample_negative: true
+  split_type: temporal
+  task: link_pred
+  task_type: classification
+  transform: []
+gnn:
+  act: relu
+  agg: add
+  batchnorm: false
+  dim_inner: 64
+  dropout: 0.1
+  head: custom
+  layer_type: gatconv
+  layers_mp: 2
+  layers_post_mp: 2
+  layers_pre_mp: 2
+  normalize_adj: false
+  stage_type: skipconcat
+model:
+  edge_decoding: dot
+  graph_pooling: add
+  loss_fun: cross_entropy
+  type: gnn
+num_workers: 10
+optim:
+  base_lr: 0.01
+  max_epoch: 200
+  optimizer: adam
+  scheduler: None
+  early_stop: False
+seed: 2024
+out_dir: results/temporal_split
+tensorboard_each_run: true
+train:
+  batch_size: 32
+  ckpt_period: 100
+  eval_period: 1
+  sampler: full_batch

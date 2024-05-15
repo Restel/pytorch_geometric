@@ -62,6 +62,9 @@ def set_cfg(cfg):
     # Print rounding
     cfg.round = 4
 
+    # Include testing for trainer
+    cfg.trainer_testing = True
+
     # Tensorboard support for each run
     cfg.tensorboard_each_run = False
 
@@ -428,6 +431,15 @@ def set_cfg(cfg):
 
     # Maximal number of epochs
     cfg.optim.max_epoch = 200
+
+    # Stoping criterion
+
+    cfg.optim.early_stop = False
+    
+    cfg.optim.early_stop_criterion = 'val_aupr'
+
+    cfg.optim.patience = 5
+
 
     # ----------------------------------------------------------------------- #
     # Batch norm options

@@ -20,6 +20,7 @@ class GraphGymModule(LightningModule):
         self.cfg = cfg
         self.model = network_dict[cfg.model.type](dim_in=dim_in,
                                                   dim_out=dim_out)
+        self.best_val_metrics = None
 
     def forward(self, *args, **kwargs):
         return self.model(*args, **kwargs)
@@ -41,9 +42,9 @@ class GraphGymModule(LightningModule):
         # if required resample negative supervision edges and add to the training batch (it should be by epoch when done properly)
         if cfg.dataset.resample_negative:
             neg_edge_index = negative_sampling(
-                edge_index=batch.edge_index, num_nodes=batch.num_nodes,
+                edge_index=torch.cat([batch.edge_index, batch.edge_label_index], dim=-1), num_nodes=batch.num_nodes,
                 num_neg_samples=int(batch.edge_label_index.size(1) * cfg.dataset.edge_negative_sampling_ratio), method='sparse')
-            print(neg_edge_index.size())
+            print(f'Samping new training neg edges: {neg_edge_index.size()}')
             edge_label_index = torch.cat(
                 [batch.edge_label_index, neg_edge_index],
                 dim=-1,

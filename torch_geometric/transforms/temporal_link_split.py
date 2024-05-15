@@ -39,15 +39,16 @@ class TemporalLinkSplit(BaseTransform):
             Data,
             Data,
     ]:
-        assert len(self.indices) == 4
+        assert len(self.indices) == 5
         
         
         data_0 = copy.copy(data[self.indices[0]])
         data_1 = copy.copy(data[self.indices[1]])
         data_2 = copy.copy(data[self.indices[2]])
         data_3 = copy.copy(data[self.indices[3]])
+        data_4 = copy.copy(data[self.indices[4]])
         
-        
+
         train_data = Data()
         val_data = Data()
         test_data = Data()
@@ -58,25 +59,24 @@ class TemporalLinkSplit(BaseTransform):
             raise NotImplementedError('Negative sampling for train not supported yet')
 
         # train construction
-        f = RandomLinkSplit(num_val=0, num_test=0, 
-                            is_undirected=False,
-                            add_negative_train_samples=self.add_negative_train_samples, 
-                            disjoint_train_ratio=0.999,
-                            neg_sampling_ratio=self.neg_sampling_ratio)
-        
-        train_data, _, _ = f(data_0)
-        #train_data.edge_index = data_0.edge_index
-        #train_data.x = data_0.x
-        #train_data.edge_attr = data_0.edge_attr
-        #train_data.edge_label_index = train_data.edge_index # TODO split train into MPP and supervision randomly if cfg.disjoint_ratio
-        #train_data.edge_label = torch.ones(train_data.edge_label_index.size(1)) # all train MPP edges are incuded in supervision
+        train_data.edge_index = data_0.edge_index
+        train_data.x = data_0.x
+        train_data.edge_attr = data_0.edge_attr
+        train_label_edges_mask = edge_mask(data_1.edge_index, train_data.edge_index) # val supervision edges
+
+        self._create_label(
+            data_1,
+            train_label_edges_mask,
+            torch.tensor([]),
+            out=train_data,
+        )
 
         
         # val construction
-        val_data.edge_index = data_0.edge_index # val MPP = train MPP + supervision edges
-        val_data.x = train_data.x # val MPP = train MPP edges
-        val_data.edge_attr = data_0.edge_attr
-        val_label_edges_mask = edge_mask(data_1.edge_index, val_data.edge_index) # val supervision edges
+        val_data.edge_index = data_1.edge_index # val MPP = train MPP + supervision edges
+        val_data.x = data_1.x # val MPP = train MPP edges
+        val_data.edge_attr = data_1.edge_attr
+        val_label_edges_mask = edge_mask(data_2.edge_index, val_data.edge_index) # val supervision edges
         num_val = val_label_edges_mask.sum().item()
         num_neg_val = int(num_val * self.neg_sampling_ratio)
         neg_edge_index_val = negative_sampling(val_data.edge_index, 
@@ -86,16 +86,16 @@ class TemporalLinkSplit(BaseTransform):
         # proceed with label construction using data_1.edge_index as input, 
         # val_label_edges_mask, neg_edge_index_val as index val_data as output
         self._create_label(
-            data_1,
+            data_2,
             val_label_edges_mask,
             neg_edge_index_val,
             out=val_data,
         ) 
 
         # test construction
-        test_data.edge_index = data_1.edge_index 
-        test_data.x = data_1.x 
-        test_label_edges_mask = edge_mask(data_2.edge_index, test_data.edge_index) # val supervision edges
+        test_data.edge_index = data_2.edge_index 
+        test_data.x = data_2.x 
+        test_label_edges_mask = edge_mask(data_3.edge_index, test_data.edge_index) # val supervision edges
         num_test = test_label_edges_mask.sum().item()
         num_neg_test = int(num_test * self.neg_sampling_ratio)
         neg_edge_index_test = negative_sampling(test_data.edge_index, 
@@ -105,7 +105,7 @@ class TemporalLinkSplit(BaseTransform):
         # TODO proceed with label construction using data_2.edge_index as input, 
         # test_label_edges_mask, neg_edge_index_test as index test_data as output
         self._create_label(
-            data_2,
+            data_3,
             test_label_edges_mask,
             neg_edge_index_test,
             out=test_data,
@@ -114,14 +114,14 @@ class TemporalLinkSplit(BaseTransform):
         # final_test construction
         final_test_data.edge_index = test_data.edge_index # val MPP = train MPP edges
         final_test_data.x = test_data.x # val MPP = train MPP edges
-        final_test_label_edges_mask = edge_mask(data_3.edge_index, final_test_data.edge_index) 
+        final_test_label_edges_mask = edge_mask(data_4.edge_index, torch.cat([test_data.edge_index, test_data.edge_label_index], dim=-1)) 
         num_final_test = final_test_label_edges_mask.sum().item()
         num_neg_final_test = int(num_final_test * self.neg_sampling_ratio)
         neg_edge_index_final_test = negative_sampling(final_test_data.edge_index, 
                                                num_neg_samples=num_neg_final_test,
                                                method='sparse')
         self._create_label(
-            data_3,
+            data_4,
             final_test_label_edges_mask,
             neg_edge_index_final_test,
             out=final_test_data,

@@ -101,20 +101,24 @@ class Logger:
             precision_score,
             recall_score,
             roc_auc_score,
+            average_precision_score,  # AUPR metric
         )
 
         true, pred_score = torch.cat(self._true), torch.cat(self._pred)
         pred_int = self._get_pred_int(pred_score)
         try:
             r_a_score = roc_auc_score(true, pred_score)
+            aupr_score = average_precision_score(true, pred_score)  # Calculate AUPR
         except ValueError:
             r_a_score = 0.0
+            aupr_score = 0.0
         return {
             'accuracy': round(accuracy_score(true, pred_int), cfg.round),
             'precision': round(precision_score(true, pred_int), cfg.round),
             'recall': round(recall_score(true, pred_int), cfg.round),
             'f1': round(f1_score(true, pred_int), cfg.round),
             'auc': round(r_a_score, cfg.round),
+            'aupr': round(aupr_score, cfg.round),  # Include AUPR in the returned metrics
         }
 
     def classification_multi(self):
@@ -238,18 +242,22 @@ def infer_task():
 def create_logger():
     r"""Create logger for the experiment."""
     loggers = []
-    names = ['train', 'val', 'test']
-    for i, dataset in enumerate(range(cfg.share.num_splits)):
-        loggers.append(Logger(name=names[i], task_type=infer_task()))
+    names = ['train', 'val']    
+    # Create train and val loggers
+    for name in names:
+        loggers.append(Logger(name=name, task_type=infer_task()))
+    
     return loggers
 
 
 class LoggerCallback(Callback):
     def __init__(self):
         self._logger = create_logger()
+        # Add additional loggers for the test dataloaders
+        self.test_loggers = [Logger(name=f'test_split_{i}', task_type=infer_task()) for i in range(2)]
         self._train_epoch_start_time = None
         self._val_epoch_start_time = None
-        self._test_epoch_start_time = None
+        self._test_epoch_start_time = [None, None]  # Now a list to handle multiple test timings
 
     @property
     def train_logger(self) -> Any:
@@ -259,12 +267,14 @@ class LoggerCallback(Callback):
     def val_logger(self) -> Any:
         return self._logger[1]
 
-    @property
-    def test_logger(self) -> Any:
-        return self._logger[2]
+    def test_logger(self, idx) -> Any:
+        # Returns the appropriate logger based on the test dataloader index
+        return self.test_loggers[idx]
 
     def close(self):
         for logger in self._logger:
+            logger.close()
+        for logger in self.test_loggers:
             logger.close()
 
     def _get_stats(
@@ -301,7 +311,9 @@ class LoggerCallback(Callback):
         trainer: 'pl.Trainer',
         pl_module: 'pl.LightningModule',
     ):
-        self._test_epoch_start_time = time.time()
+        # Set the start time for both test dataloaders
+        for i in range(len(self._test_epoch_start_time)):
+            self._test_epoch_start_time[i] = time.time()
 
     def on_train_batch_end(
         self,
@@ -336,8 +348,9 @@ class LoggerCallback(Callback):
         batch_idx: int,
         dataloader_idx: int = 0,
     ):
-        stats = self._get_stats(self._test_epoch_start_time, outputs, trainer)
-        self.test_logger.update_stats(**stats)
+        # Calculate stats and update the appropriate test logger
+        stats = self._get_stats(self._test_epoch_start_time[dataloader_idx], outputs, trainer)
+        self.test_logger(dataloader_idx).update_stats(**stats)
 
     def on_train_epoch_end(
         self,
@@ -351,14 +364,33 @@ class LoggerCallback(Callback):
         trainer: 'pl.Trainer',
         pl_module: 'pl.LightningModule',
     ):
-        self.val_logger.write_epoch(trainer.current_epoch)
+        task_stats = self.val_logger.classification_binary() # TODO change to account for other tasks
+        # Check if the current metrics are better than the previous best metrics
+        if pl_module.best_val_metrics is None or task_stats['aupr'] > pl_module.best_val_metrics['aupr']:
+            pl_module.best_val_metrics = task_stats.copy()
+        # Log the statistics into the Lightning module
+        for key, value in task_stats.items():
+            pl_module.log(f'val_{key}', value, prog_bar=True)
+            if trainer.current_epoch > cfg.optim.max_epoch / 6:  # Append to list only after one-sixth of max_epoch
+                key_name = f'val_{key}_convergence_values'
+                if key_name not in trainer.callback_metrics:
+                    trainer.callback_metrics[key_name] = []  # Initialize list if not exists
+                trainer.callback_metrics[key_name].append(value)
+        self.val_logger.write_epoch(trainer.current_epoch)    
 
     def on_test_epoch_end(
         self,
         trainer: 'pl.Trainer',
         pl_module: 'pl.LightningModule',
     ):
-        self.test_logger.write_epoch(trainer.current_epoch)
+        # Write the epoch results for both test dataloaders
+        for i, logger in enumerate(self.test_loggers):
+            logger.write_epoch(trainer.current_epoch)
 
     def on_fit_end(self, trainer, pl_module):
+        # Log the best validation metrics at the end of training
+        if pl_module.best_val_metrics:
+            for key, value in pl_module.best_val_metrics.items():
+                pl_module.logger.experiment.add_scalar(f'best_val_{key}', value)
+                trainer.logger.experiment.add_scalar(f'best_val_{key}', value)
         self.close()
