@@ -20,6 +20,8 @@ class TemporalLinkSplit(BaseTransform):
     def __init__(
         self,
         indices,
+        downsample_test: bool = False,
+        downsample_test_rate: float = 0.5,
         key: str = 'edge_label',
         split_labels: bool = False,
         add_negative_train_samples: bool = True,
@@ -30,6 +32,8 @@ class TemporalLinkSplit(BaseTransform):
         self.split_labels = split_labels
         self.add_negative_train_samples = add_negative_train_samples
         self.neg_sampling_ratio = neg_sampling_ratio
+        self.downsample_test = downsample_test
+        self.downsample_test_rate = downsample_test_rate
 
     def forward(
         self,
@@ -95,7 +99,10 @@ class TemporalLinkSplit(BaseTransform):
         # test construction
         test_data.edge_index = data_2.edge_index 
         test_data.x = data_2.x 
-        test_label_edges_mask = edge_mask(data_3.edge_index, test_data.edge_index) # val supervision edges
+        test_label_edges_mask = edge_mask(data_3.edge_index, test_data.edge_index) # test supervision edges
+        test_label_edges_prelim =  data_3.edge_index[:, test_label_edges_mask] # these edges are "reserved" for test dataset even if not picked as label edges
+        if self.downsample_test:
+            test_label_edges_mask = torch.Tensor([True if x and random.random() > self.downsample_test_rate else False for x in test_label_edges_mask])
         num_test = test_label_edges_mask.sum().item()
         num_neg_test = int(num_test * self.neg_sampling_ratio)
         neg_edge_index_test = negative_sampling(test_data.edge_index, 
@@ -114,7 +121,7 @@ class TemporalLinkSplit(BaseTransform):
         # final_test construction
         final_test_data.edge_index = test_data.edge_index # val MPP = train MPP edges
         final_test_data.x = test_data.x # val MPP = train MPP edges
-        final_test_label_edges_mask = edge_mask(data_4.edge_index, torch.cat([test_data.edge_index, test_data.edge_label_index], dim=-1)) 
+        final_test_label_edges_mask = edge_mask(data_4.edge_index, torch.cat([test_data.edge_index, test_label_edges_prelim], dim=-1)) # pick edges that are not in test split (both MPP and label)
         num_final_test = final_test_label_edges_mask.sum().item()
         num_neg_final_test = int(num_final_test * self.neg_sampling_ratio)
         neg_edge_index_final_test = negative_sampling(final_test_data.edge_index, 

@@ -6,7 +6,7 @@ import numpy as np
 import torch
 
 from typing import List, Optional, Callable, Tuple
-
+import pandas as pd
 
 grn_files = {'Ecoli': ['511145_v2003_sRDB01',  
                        '511145_v2005_sRDB04', 
@@ -19,6 +19,77 @@ grn_files = {'Ecoli': ['511145_v2003_sRDB01',
                        '511145_v2018_sRDB19', 
                        '511145_v2020_s13-RDB19',
                        '511145_v2022_s13-RDB22']}
+
+grid_files = [f'BIOGRID-4.4.{ver}/BIOGRID-ALL-4.4.{ver}' for ver in range(197,234)]
+
+def read_biogrid_data(dir:str, name:str) -> Tuple[List[str], List[Data]]:
+    # Input validation
+    if not os.path.exists(dir):
+        raise FileNotFoundError(f"Directory '{dir}' does not exist.")
+    
+    # Define the columns and full organism names
+    organism_names = {'human-ppi': 'Homo sapiens',
+                      'ecoli-ppi': 'Escherichia coli (K12/W3110)',
+                      'schiz-ppi': 'Schizosaccharomyces pombe (972h)',
+                      'yeast-ppi': 'Saccharomyces cerevisiae (S288c)',
+                      'drosophila-ppi': 'Drosophila melanogaster', 
+                      'arabidopsis-ppi': 'Arabidopsis thaliana (Columbia)'}
+    columns_needed = [3, 4, 35, 36, 11, 12, 17, 18, 20]  
+
+    num_graphs = len(grid_files)
+
+    datalist = [] # list with graphs in Data format
+    unique_nodes = set()
+    edge_list = []
+    versions = []
+    for file in grid_files:
+        filename = file.split('/')[1]
+        filepath = os.path.join(dir, f'{filename}.tab3.txt')
+        version = filename.split('-')[2]
+
+        # Input validation
+        if not os.path.exists(filepath):
+            raise FileNotFoundError(f"File '{filepath}' does not exist.")
+        
+        # Load the data while ignoring lines that start with '#'
+        df = pd.read_csv(filepath, sep='\t', header=0, usecols=columns_needed)
+        df_filtered = df[df['Organism Name Interactor A'] == df['Organism Name Interactor B']].copy()
+
+        interactions = ['Co-crystal Structure',
+                'Affinity Capture-MS',
+                'Biochemical Activity',
+                'Affinity Capture-Western',
+                'Affinity Capture-RNA', 
+                'Affinity Capture-Luminescence',
+                'FRET',
+                'Co-purification'
+                ]
+        
+        df_organism = df_filtered[(df_filtered['Organism Name Interactor A']==organism_names[name]) & (df_filtered['Experimental System'].isin(interactions))].copy()
+        # Extract tuples and add them to the edge list
+        edges = list(zip(df_organism['BioGRID ID Interactor A'], df_organism['BioGRID ID Interactor B']))
+        edge_list.append(edges)
+        # Add unique IDs to node list
+        unique_nodes.update(df_organism['BioGRID ID Interactor A'])
+        unique_nodes.update(df_organism['BioGRID ID Interactor B'])
+        versions.append(version)
+    
+    node_id_mapping = {id_str: idx for idx, id_str in enumerate(unique_nodes)}
+
+    edge_list_mapped = [
+        [(node_id_mapping[x[0]], node_id_mapping[x[1]]) for x in graph] for graph in edge_list
+    ]
+    print('debug')
+
+    # one-hot encoding as base features
+    X = torch.eye(len(unique_nodes), dtype=torch.float)
+
+    for graph in range(num_graphs):
+        edge_idx = torch.tensor(np.array(edge_list_mapped[graph]).transpose(), dtype=torch.long)
+        data = Data(x=X, edge_index=edge_idx)
+        datalist.append(data)
+
+    return datalist, versions
 
 
 def convert_labels(grn:List[tuple[str]]) -> List[tuple[str]]:

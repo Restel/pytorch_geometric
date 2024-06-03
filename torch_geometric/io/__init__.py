@@ -1,7 +1,7 @@
 from .txt_array import parse_txt_array, read_txt_array
 from .tu import read_tu_data
 from .planetoid import read_planetoid_data
-from .grn import read_grn_data,grn_files,convert_labels, edge_mask, mask_tensor
+from .bionetworks import read_grn_data,grn_files,convert_labels, edge_mask, mask_tensor, read_biogrid_data, grid_files
 from .ply import read_ply
 from .obj import read_obj
 from .sdf import read_sdf, parse_sdf
@@ -26,4 +26,6 @@ __all__ = [
     'parse_sdf',
     'read_npz',
     'parse_npz',
+    'read_biogrid_data',
+    'grid_files'
 ]

@@ -1,6 +1,7 @@
 # flake8: noqa
 
 from .grn import GRNDataset
+from .biogrid import BioGridDataset
 from .karate import KarateClub
 from .tu_dataset import TUDataset
 from .gnn_benchmark_dataset import GNNBenchmarkDataset
@@ -109,6 +110,7 @@ import torch_geometric.datasets.utils
 
 homo_datasets = [
     'GRNDataset',
+    'BioGridDataset',
     'KarateClub',
     'TUDataset',
     'GNNBenchmarkDataset',

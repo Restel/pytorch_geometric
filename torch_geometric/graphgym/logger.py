@@ -31,6 +31,17 @@ def set_printing():
         raise ValueError('Print option not supported')
     logging.basicConfig(**logging_cfg)
 
+# Mean Reciprocal Rank
+def MRR(true, scores):
+    order = torch.argsort(scores, descending=True)
+    ranks = torch.where(true[order] == 1)[0] + 1
+    return torch.mean(1.0 / ranks).item()
+
+# Hit Rate at K
+def hit_rate_at_k(true, scores, k=100):
+    top_k = torch.argsort(scores, descending=True)[:k]
+    hits = true[top_k].sum().item()
+    return float(hits)
 
 class Logger:
     def __init__(self, name='train', task_type=None):
@@ -108,7 +119,7 @@ class Logger:
         pred_int = self._get_pred_int(pred_score)
         try:
             r_a_score = roc_auc_score(true, pred_score)
-            aupr_score = average_precision_score(true, pred_score)  # Calculate AUPR
+            aupr_score = average_precision_score(true, pred_score)  
         except ValueError:
             r_a_score = 0.0
             aupr_score = 0.0
@@ -118,7 +129,9 @@ class Logger:
             'recall': round(recall_score(true, pred_int), cfg.round),
             'f1': round(f1_score(true, pred_int), cfg.round),
             'auc': round(r_a_score, cfg.round),
-            'aupr': round(aupr_score, cfg.round),  # Include AUPR in the returned metrics
+            'aupr': round(aupr_score, cfg.round), 
+            'mrr': round(MRR(true, pred_score), cfg.round),  
+            'hit_K': round(hit_rate_at_k(true, pred_score, k=100), cfg.round), 
         }
 
     def classification_multi(self):
