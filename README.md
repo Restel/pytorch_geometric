@@ -20,9 +20,9 @@ pip install requests fake_useragent optuna
 ## Running experiments
 
 ```
-python main_optuna.py --cfg configs/pyg/ecoli_static.yaml --study grn-static-convergence-large-set
+python ./graphgym/main_optuna.py --cfg configs/pyg/ecoli_static.yaml --study grn-static-convergence-large-set
 
-python main_optuna.py --cfg configs/pyg/ecoli_temporal.yaml --study grn-temporal-convergence-large-set
+python ./graphgym/main_optuna.py --cfg configs/pyg/ecoli_temporal.yaml --study grn-temporal-convergence-large-set
 ```
 
 ### Notebooks
