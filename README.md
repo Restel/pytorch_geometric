@@ -25,4 +25,8 @@ python main_optuna.py --cfg configs/pyg/ecoli_static.yaml --study grn-static-con
 python main_optuna.py --cfg configs/pyg/ecoli_temporal.yaml --study grn-temporal-convergence-large-set
 ```
 
-Also check the ./graphgym/datatraining_tutorial.ipynb for an example of loading the datasets and training models.
+### Notebooks
+
+- [Data Training Tutorial Notebook](./graphgym/datatraining_tutorial.ipynb)
+
+Check the ./graphgym/datatraining_tutorial.ipynb for an example of loading the datasets and training models.g
