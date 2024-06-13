@@ -228,6 +228,11 @@ def set_cfg(cfg):
     # Define label: Column name
     cfg.dataset.label_column = 'none'
 
+    # Donwsample test edge set
+    cfg.dataset.downsample_test = False
+    
+    cfg.dataset.downsample_test_rate = 0.5
+
     # ----------------------------------------------------------------------- #
     # Training options
     # ----------------------------------------------------------------------- #

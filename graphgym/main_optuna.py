@@ -20,8 +20,27 @@ from torch_geometric.graphgym import register
 import optuna
 import numpy as np
 from pytorch_lightning import seed_everything
+import argparse
 
 
+
+### Usage:
+### python main_spot_checking.py --cfg configs/pyg/ecoli_optuned_static.yaml --study grn-static-convergence-large-set --cutoff 0.9
+### python main_spot_checking.py --cfg configs/pyg/ecoli_optuned_temporal.yaml --study grn-temporal-convergence-large-set --cutoff 0.78
+
+def parse_args() -> argparse.Namespace:
+    r"""Parses the command line arguments."""
+    parser = argparse.ArgumentParser(description='optuned')
+
+    parser.add_argument('--cfg', dest='cfg_file', type=str, required=True,
+                        help='The configuration file path.')
+    parser.add_argument('--study', dest='study_name', type=str, required=True,
+                        help='The name of the study to create')
+    parser.add_argument('--cuda', dest='cuda', type=str, required=False, default='6',
+                        help='The cuda device')
+    parser.add_argument('opts', default=None, nargs=argparse.REMAINDER,
+                        help='See graphgym/config.py for remaining options.')
+    return parser.parse_args()
 
 def objective(trial):
     # Define hyperparameters to optimize
@@ -36,14 +55,19 @@ def objective(trial):
     cfg.gnn.stage_type =  trial.suggest_categorical('stage_type', ['skipsum', 'skipconcat'])
     cfg.gnn.agg =  trial.suggest_categorical('agg', ['add', 'mean', 'max'])
     cfg.gnn.keep_edge = trial.suggest_categorical('keep_edge', [0, 0.1, 0.3, 0.5])
-    cfg.gnn.dim_inner =  trial.suggest_categorical('dim_inner', [8, 16, 32])
+    cfg.gnn.dim_inner =  trial.suggest_categorical('dim_inner', [8, 16, 32, 64])
     cfg.optim.weight_decay = trial.suggest_categorical('weight_decay', [5e-5, 1e-4, 5e-4])
     cfg.optim.scheduler = trial.suggest_categorical('scheduler', ['cos', 'none'])
     cfg.seed = trial.suggest_int('seed', 0, 100)
     
     # Create PyTorch Lightning model with hyperparameters specified in cfg 
     seed_everything(cfg.seed, workers=True)
-    datamodule = register.train_dict["CustomGraphGymDataModule"](split_type = cfg.dataset.split_type)
+    if cfg.dataset.name in ['yeast-ppi']:
+        print('Loading BIOGRID') 
+        datamodule = register.train_dict["BioGridGraphGymDataModule"](split_type = cfg.dataset.split_type)    
+    else:
+        print('Loading Abasy') 
+        datamodule = register.train_dict["CustomGraphGymDataModule"](split_type = cfg.dataset.split_type)
     model = create_model()
     cfg.params = params_count(model)
     logging.info('Num parameters: %s', cfg.params)
@@ -52,8 +76,8 @@ def objective(trial):
     return val_metric
 
 if __name__ == '__main__':
-    os.environ["CUDA_VISIBLE_DEVICES"] = "7"
     args = parse_args()
+    os.environ["CUDA_VISIBLE_DEVICES"] = args.cuda
     # Load config file
     load_cfg(cfg, args)
     set_out_dir(cfg.out_dir, args.cfg_file)
@@ -67,8 +91,8 @@ if __name__ == '__main__':
 
     # Define Optuna study
     study = optuna.create_study(direction='maximize',
-                                study_name = 'grn-static-convergence-large-set',
-                                storage='sqlite:///grn.db',
+                                study_name = args.study_name,
+                                storage='sqlite:///yeast.db',
                                 load_if_exists=True)
 
     study.optimize(objective, n_trials=500)

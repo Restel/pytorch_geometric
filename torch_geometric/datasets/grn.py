@@ -8,6 +8,7 @@ from pandas import DataFrame
 import networkx as nx
 from torch_geometric.utils import to_networkx
 import torch
+from fake_useragent import UserAgent
 
 from typing import List, Optional, Callable, Tuple
 
@@ -85,9 +86,8 @@ class GRNDataset(InMemoryDataset):
 
     def download(self):
         # Download the raw data and save it to the raw directory
-        headers = {
-            'User-Agent': f"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        } # TODO user agent getter e.g https://www.whatismybrowser.com/detect/what-is-my-user-agent/
+        ua = UserAgent()
+        headers = {'User-Agent': ua.random}
         api_stem = 'https://abasy.ccg.unam.mx/rest/regnets/'
         os.makedirs(self.raw_dir, exist_ok=True)
         for file in grn_files[self.name]:

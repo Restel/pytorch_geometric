@@ -79,7 +79,7 @@ def read_biogrid_data(dir:str, name:str) -> Tuple[List[str], List[Data]]:
     edge_list_mapped = [
         [(node_id_mapping[x[0]], node_id_mapping[x[1]]) for x in graph] for graph in edge_list
     ]
-    print('debug')
+    
 
     # one-hot encoding as base features
     X = torch.eye(len(unique_nodes), dtype=torch.float)

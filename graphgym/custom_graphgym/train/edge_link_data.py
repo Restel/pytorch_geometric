@@ -250,8 +250,7 @@ class BioGridGraphGymDataModule(LightningDataModule):
     
         if split_type == 'static':
             assert len(data_split_indices) == 2, ValueError('Static split must have 2 indices')
-            f = RandomLinkSplit(num_val=0.1, num_test=0.1, is_undirected=False,
-                        add_negative_train_samples=add_negative_train_samples, 
+            f = RandomLinkSplit(num_val=0.1, num_test=0.1, add_negative_train_samples=add_negative_train_samples, 
                         neg_sampling_ratio=cfg.dataset.edge_negative_sampling_ratio,
                         disjoint_train_ratio=disjoint_train_ratio)
             splits = f(self.dataset[data_split_indices[0]])

@@ -28,12 +28,12 @@ class BioGridDataset(InMemoryDataset):
     
     @property
     def raw_dir(self) -> str:
-        name = os.path.join(self.root, 'biogrid', 'raw')
+        name = os.path.join(self.root, str(self.name), 'raw')
         return name
 
     @property
     def processed_dir(self) -> str:
-        name = os.path.join(self.root, 'biogrid', self.name, 'processed')
+        name = os.path.join(self.root, str(self.name), 'processed')
         return name
 
     @property
@@ -116,17 +116,12 @@ class BioGridDataset(InMemoryDataset):
             data, years  = read_biogrid_data(self.raw_dir, self.name)
             self.versions = years
             # Apply the functions specified in pre_filter and pre_transform
-            if self.pre_filter is not None:
-                data = [d for d in data if self.pre_filter(d)]
-                # 1. TODO write pre-filter func to remove dual edges 
+            if self.pre_filter is not None:           
+                data = [d for d in data if self.pre_filter(d)]                
                 
 
             if self.pre_transform is not None:
                 data = [self.pre_transform(d) for d in data] 
-                # 2. TODO write pre-tansform or transform (?) function to make edges unsigned
-                # 3. TODO write pre-tansform or transform (?) function to filter out weak edges
-            
-            #self.data, self.slices = self.collate(data)
             self.data = data
             # Store the processed data
             torch.save(self.data, self.processed_paths[0])
