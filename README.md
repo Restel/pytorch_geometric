@@ -29,4 +29,21 @@ python ./graphgym/main_optuna.py --cfg configs/pyg/ecoli_temporal.yaml --study g
 
 - [Data Training Tutorial Notebook](./graphgym/datatraining_tutorial.ipynb)
 
-Check the ./graphgym/datatraining_tutorial.ipynb for an example of loading the datasets and training models.g
+Check the ./graphgym/datatraining_tutorial.ipynb for an example of loading the datasets and training models.
+
+### Summary of main changes in this PR
+
+- Add New PyG datasets:
+  - [Biogrid](./torch_geometric/datasets/biogrid.py)
+  - [GRN](./torch_geometric/datasets/grn.py)
+
+This downloads the data directly from databases, pre-process and transform the datasets.
+
+- Add custom dataloader and training pipelines into graphgym:
+  - [dataloader](./graphgym/custom_graphgym/loader/edge_link_loader.py)
+  - [training](./graphgym/custom_graphgym/train/edge_link_data.py)
+
+- Add optuna hyperparameter optimization dataloader and training pipelines into graphgym:
+  - [optuna main call](./graphgym/main_optuna.py)
+
+- Fixing bugs for handling link prediction task in graphgym

@@ -25,8 +25,8 @@ import argparse
 
 
 ### Usage:
-### python main_spot_checking.py --cfg configs/pyg/ecoli_optuned_static.yaml --study grn-static-convergence-large-set --cutoff 0.9
-### python main_spot_checking.py --cfg configs/pyg/ecoli_optuned_temporal.yaml --study grn-temporal-convergence-large-set --cutoff 0.78
+### python main_optuna.py --cfg configs/pyg/ecoli_static.yaml --study grn-static-convergence-large-set
+### python main_optuna.py --cfg configs/pyg/ecoli_temporal.yaml --study grn-temporal-convergence-large-set
 
 def parse_args() -> argparse.Namespace:
     r"""Parses the command line arguments."""
