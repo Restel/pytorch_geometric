@@ -1,5 +1,4 @@
 import torch
-from torch.utils.data import DataLoader
 from typing import Optional
 from torch_geometric.data.lightning.datamodule import LightningDataModule
 from torch_geometric.graphgym import create_loader
@@ -30,10 +29,11 @@ def set_split_attributes(split_data: Data, split: str) -> Data:
     return split_data
 
 import torch
-from torch_geometric.data import Data, DataLoader, InMemoryDataset
+from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.utils import negative_sampling
 from typing import Callable
 from torch_geometric.data import Dataset
+from torch_geometric.loader import DataLoader
 
 split_indices = {'temporal':{'yeast-ppi': [0, 12, 29, 33, 36],
                              'human-ppi': [None]}, 

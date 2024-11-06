@@ -36,20 +36,17 @@ def load_dataset_example(format, name, dataset_dir):
             dataset = Planetoid(dataset_dir, name) 
         elif name in ['Ecoli']:
             f = T.Compose([T.RemoveDuplicatedEdges(), RemoveSelfLoops()])
-            dataset = GRNDataset(dataset_dir, name, pre_transform=f)
-        elif name in ['yeast-ppi', 'human-ppi']:
+            dataset = GRNDataset(dataset_dir, name, pre_transform=f, force_reload=True)
+        elif name in ['yeast-ppi', 'human-ppi']: # TODO p0 add make undireted graph transform here
             f = T.Compose([T.RemoveDuplicatedEdges(), RemoveSelfLoops()])
-            dataset = BioGridDataset(dataset_dir, name, transform=f)
+            dataset = BioGridDataset(dataset_dir, name, pre_transform=f, force_reload=True)
         else:
             raise ValueError(f"'{name}' is not supported")
 
     if cfg.dataset.task == 'link_pred':
-        for data in dataset.data:
-            try: 
-                delattr(data, 'y')
-                delattr(data, 'train_mask')
-                delattr(data, 'val_mask')
-                delattr(data, 'test_mask') # for node-classification datasets
-            except: 
-                Exception
+        for data in dataset: 
+            attributes_to_delete = ['y', 'train_mask', 'val_mask', 'test_mask'] # attributes for node classification datasets
+            for attr in attributes_to_delete:
+                if hasattr(data, attr):
+                    delattr(data, attr)
     return dataset

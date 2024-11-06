@@ -19,10 +19,11 @@ class GRNDataset(InMemoryDataset):
     def __init__(self, root: str, name: str,
                  transform: Optional[Callable] = None,
                  pre_transform: Optional[Callable] = None,
-                 pre_filter: Optional[Callable] = None
+                 pre_filter: Optional[Callable] = None,
+                 force_reload: bool = False
                  ):
         self.name = name
-        super(GRNDataset, self).__init__(root, transform, pre_transform, pre_filter)
+        super(GRNDataset, self).__init__(root, transform, pre_transform, pre_filter, force_reload=force_reload)
         # self.load(self.processed_paths[0]) # for pyg >= 2.4
         self.data = torch.load(self.processed_paths[0])
         self.versions = torch.load(self.processed_paths[1])
@@ -48,10 +49,10 @@ class GRNDataset(InMemoryDataset):
         return ['data.pt', 'versions.pt']
 
     def __len__(self):
-        return len(self.data)
+        return len(self._data)
 
     def __getitem__(self, idx):
-        current_graph = self.data[idx]
+        current_graph = self._data[idx]
         if self.transform is not None:
             current_graph = self.transform(current_graph)
         return current_graph
@@ -70,7 +71,9 @@ class GRNDataset(InMemoryDataset):
             'validated': []
         }
 
-        for graph, ver in zip(self.data, self.versions):
+        for idx in range(len(self)): # use direct indexing
+            graph = self[idx]
+            ver = self.versions[idx]
             nx_graph = to_networkx(graph)
             G_undir = nx.Graph()
             G_undir.add_edges_from(graph.edge_index.t().tolist())
